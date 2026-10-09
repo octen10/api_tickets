@@ -1,28 +1,98 @@
 <?php
+
 include 'db.php';
 
-$sql = "SELECT id, id_pelanggan AS idPelanggan, subjek, dispatcher, status, tanggal_ticket AS tanggalTicket FROM tickets ORDER BY id DESC";
+header('Content-Type: application/json; charset=UTF-8');
+
+$sql = "
+    SELECT
+        id,
+        id_pelanggan AS idPelanggan,
+        subjek,
+        dispatcher,
+        status,
+        tanggal_ticket AS tanggalTicket
+    FROM tickets
+    ORDER BY id DESC
+";
+
 $result = $conn->query($sql);
+
+if (!$result) {
+    echo json_encode([
+        "status" => "error",
+        "message" => $conn->error
+    ]);
+    exit;
+}
 
 $tickets = [];
 
 while ($row = $result->fetch_assoc()) {
-    $ticket_id = $row['id'];
-    
-    // Ambil riwayat ticket
-    $hist_sql = "SELECT status, date, user, notes, attachment FROM ticket_history WHERE ticket_id = $ticket_id ORDER BY id ASC";
-    $hist_result = $conn->query($hist_sql);
-    
+
+    $ticketId = (int)$row['id'];
+
+    $historySql = "
+        SELECT
+            id,
+            status,
+            created_at AS date,
+            user,
+            notes,
+            attachment
+        FROM ticket_history
+        WHERE ticket_id = $ticketId
+        ORDER BY id ASC
+    ";
+
+    $historyResult = $conn->query($historySql);
+
     $history = [];
-    if ($hist_result && $hist_result->num_rows > 0) {
-        while ($h = $hist_result->fetch_assoc()) {
-            $history[] = $h;
+
+    if ($historyResult) {
+
+        while ($historyRow = $historyResult->fetch_assoc()) {
+
+            /*
+             * Attachment bisa berupa:
+             *
+             * 1. URL lengkap:
+             *    http://localhost/api_tickets/uploads/foto.jpg
+             *
+             * 2. Path relatif:
+             *    uploads/foto.jpg
+             *
+             * Jangan tambahkan URL dasar
+             * kalau sudah berupa URL lengkap.
+             */
+
+            if (!empty($historyRow['attachment'])) {
+
+                $attachment = trim($historyRow['attachment']);
+
+                if (
+                    strpos($attachment, 'http://') !== 0 &&
+                    strpos($attachment, 'https://') !== 0
+                ) {
+                    $historyRow['attachment'] =
+                        'http://localhost/api_tickets/' .
+                        ltrim($attachment, '/');
+                } else {
+                    $historyRow['attachment'] = $attachment;
+                }
+            }
+
+            $history[] = $historyRow;
         }
     }
-    
+
     $row['history'] = $history;
+
     $tickets[] = $row;
 }
 
 echo json_encode($tickets);
+
+$conn->close();
+
 ?>
